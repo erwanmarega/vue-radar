@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import { scan } from './scanner'
+import { loadConfig } from './config'
 import { printReport, printJson } from './reporter'
 import { install } from './commands/install'
 import { initAction } from './commands/init-action'
 import { execSync } from 'child_process'
+import { resolve } from 'path'
 
 const program = new Command()
 
@@ -21,12 +23,14 @@ program
   .option('--diff', 'scan only files changed vs main/master branch')
   .option('--rule <ids>', 'run only these rule IDs (comma-separated)')
   .option('--skip <ids>', 'skip these rule IDs (comma-separated)')
-  .option('--fail-on <level>', 'exit 1 if issues at this severity exist (error|warning|info)', 'error')
+  .option('--config <path>', 'path to a vue-radar config file (default: auto-detect)')
+  .option('--fail-on <level>', 'exit 1 if issues at this severity exist (error|warning|info)')
   .action(async (dir: string, opts: {
     json?: boolean
     diff?: boolean
     rule?: string
     skip?: string
+    config?: string
     failOn?: string
   }) => {
     let diffFiles: string[] | undefined
@@ -48,7 +52,15 @@ program
     const only = opts.rule ? opts.rule.split(',').map(s => s.trim()) : undefined
     const skip = opts.skip ? opts.skip.split(',').map(s => s.trim()) : undefined
 
-    const result = await scan(dir, { diffFiles, only, skip })
+    let config
+    try {
+      config = loadConfig(resolve(dir), opts.config)
+    } catch (e) {
+      console.error((e as Error).message)
+      process.exit(1)
+    }
+
+    const result = await scan(dir, { diffFiles, only, skip, config })
 
     if (opts.json) {
       printJson(result)
@@ -56,7 +68,8 @@ program
       printReport(result)
     }
 
-    const failLevel = opts.failOn ?? 'error'
+    // Precedence: --fail-on flag > config.failOn > 'error'.
+    const failLevel = opts.failOn ?? config.failOn ?? 'error'
     const failSeverities =
       failLevel === 'info' ? ['error', 'warning', 'info']
       : failLevel === 'warning' ? ['error', 'warning']

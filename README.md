@@ -37,9 +37,61 @@ npx vue-radar@latest --skip no-async-component,missing-shallow-ref
 # exit 1 on warnings too (useful for CI)
 npx vue-radar@latest --fail-on warning
 
+# use an explicit config file
+npx vue-radar@latest --config vue-radar.config.json
+
 # list all rules
 npx vue-radar@latest rules
 ```
+
+## Configuration
+
+Drop a `vue-radar.config.json` (or `.vue-radarrc.json`) in your project root.
+It is auto-detected; override with `--config <path>`.
+
+```json
+{
+  "rules": {
+    "v-html-unsafe": "error",
+    "dynamic-href-unsafe": "warning",
+    "missing-key-in-v-for": "off"
+  },
+  "ignore": ["**/legacy/**", "**/*.spec.vue"],
+  "failOn": "error"
+}
+```
+
+- **`rules`** — per-rule override. `"off"` disables the rule; `"error"`,
+  `"warning"`/`"warn"`, `"info"` change its reported severity.
+- **`ignore`** — extra glob patterns excluded from scanning (on top of
+  `node_modules`, `dist`, `.nuxt`, `.output`).
+- **`failOn`** — severity threshold that makes the CLI exit `1`.
+
+CLI flags win over the config file: `--skip` adds to disabled rules, `--rule`
+narrows to the listed rules, and `--fail-on` overrides `failOn`.
+
+## Suppressing issues inline
+
+Silence a specific finding without disabling the rule project-wide. Works in
+both template (HTML) and script (JS/TS) comments. Omit the rule ids to suppress
+every rule on the target line.
+
+```vue
+<template>
+  <!-- vue-radar-disable-next-line v-html-unsafe -->
+  <p v-html="trustedMarkdown"></p>
+
+  <a :href="url">link</a> <!-- vue-radar-disable-line dynamic-href-unsafe -->
+</template>
+
+<script setup lang="ts">
+// vue-radar-disable-next-line no-explicit-any
+const data: any = await fetchLegacy()
+</script>
+```
+
+- `vue-radar-disable-next-line [rule-a,rule-b]` — silence the next line.
+- `vue-radar-disable-line [rule-a,rule-b]` — silence the current line.
 
 ## Install as agent skill
 
@@ -122,6 +174,22 @@ Use `--json` to get `result.score` programmatically for CI gates.
 
 Vue 3 · Nuxt 3 · Vite · Quasar · Ionic Vue
 
+## How analysis works
+
+Rules run against real ASTs, not text matching:
+
+- **Templates** are parsed with `@vue/compiler-sfc` + `@vue/compiler-dom` —
+  directives, `v-for`/`v-if`, `:key` and bindings are inspected structurally.
+- **Scripts** are parsed with `@typescript-eslint/typescript-estree` — calls
+  (`ref`, `reactive`, `computed`, `watch`, lifecycle hooks, `useFetch`) are
+  resolved by name and scope, assignments and type nodes (e.g. `any`) by node
+  type. No brace-counting, no line regex.
+
+This keeps false positives low: `any` in a comment, a ref reassigned vs.
+declared, a `reactive` property set vs. replaced, or a lifecycle hook inside
+`<script setup>` are all distinguished correctly. Each rule is covered by
+pass/fail tests in `src/rules.test.ts` (`npm test`).
+
 ## Local development
 
 ```bash
@@ -151,16 +219,18 @@ export const myRule: Rule = {
   category: 'correctness', // security | correctness | performance | architecture | composition
   severity: 'warning',     // error | warning | info
   check(ctx) {
-    const template = ctx.sfc.template?.content ?? ''
-    // analyse ctx.sfc.template, ctx.sfc.scriptSetup, ctx.scriptAst
-    // call ctx.report() if issue found
-    if (/bad-pattern/.test(template)) {
+    // Walk the template AST (ctx.templateAst) and/or the script AST
+    // (ctx.scriptAst). Helpers live in src/ast-utils.ts: walkElements,
+    // getDirective, collectCalls, calleeName, isInsideSetup, varNamesByInitCall…
+    if (!ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      if (calleeName(call) !== 'badApi') continue
       ctx.report({
         ruleId: 'my-rule-id',
         category: 'correctness',
         severity: 'warning',
         message: 'Explain what is wrong.',
-        line: 1,
+        line: (call as any).loc?.start.line,
         fix: 'Explain how to fix it.',
       })
     }
@@ -169,7 +239,8 @@ export const myRule: Rule = {
 ```
 
 3. Export it from `src/rules/index.ts`
-4. `npm run build`
+4. Add pass/fail cases in `src/rules.test.ts`
+5. `npm test`
 
 ## License
 

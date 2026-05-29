@@ -1,18 +1,26 @@
 import { parse as parseTS } from '@typescript-eslint/typescript-estree'
 import type { TSESTree } from '@typescript-eslint/typescript-estree'
+import { parse as parseSFC } from '@vue/compiler-sfc'
+import type { RootNode } from '@vue/compiler-dom'
+import { parseTemplate, attachParents } from './ast-utils'
 import type { ParsedSFC } from './types'
 
 export interface ParsedFile {
   sfc: ParsedSFC
   scriptAst?: TSESTree.Program
+  templateAst?: RootNode
   source: string
 }
 
-function extractBlock(source: string, tag: string, attrs?: string): string | undefined {
-  const attrPart = attrs ? `(?=[^>]*\\b${attrs}\\b)` : '(?![^>]*\\bsetup\\b)'
-  const re = new RegExp(`<${tag}${attrPart}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i')
-  const m = source.match(re)
-  return m?.[1]
+/**
+ * Pad a block's content with leading newlines so that line numbers reported by
+ * any analyser (template AST, script AST, or naive line split) match the line
+ * in the original .vue file. `startLine` is the 1-based line where the block
+ * content begins in the source. No padding needed when it starts on line 1.
+ */
+function padToLine(content: string, startLine: number): string {
+  if (startLine <= 1) return content
+  return '\n'.repeat(startLine - 1) + content
 }
 
 export function parseVueFile(source: string): ParsedFile {
@@ -22,14 +30,27 @@ export function parseVueFile(source: string): ParsedFile {
     scriptSetup: undefined,
   }
 
-  const templateContent = extractBlock(source, 'template')
-  if (templateContent !== undefined) sfc.template = { content: templateContent }
+  // @vue/compiler-sfc resolves nested <template>, multiple/duplicate blocks,
+  // comments and custom blocks correctly — unlike the previous regex parser.
+  const { descriptor } = parseSFC(source, { filename: 'component.vue' })
 
-  const scriptSetupContent = extractBlock(source, 'script', 'setup')
-  if (scriptSetupContent !== undefined) sfc.scriptSetup = { content: scriptSetupContent }
+  if (descriptor.template) {
+    sfc.template = {
+      content: padToLine(descriptor.template.content, descriptor.template.loc.start.line),
+    }
+  }
 
-  const scriptContent = extractBlock(source, 'script')
-  if (scriptContent !== undefined) sfc.script = { content: scriptContent }
+  if (descriptor.scriptSetup) {
+    sfc.scriptSetup = {
+      content: padToLine(descriptor.scriptSetup.content, descriptor.scriptSetup.loc.start.line),
+    }
+  }
+
+  if (descriptor.script) {
+    sfc.script = {
+      content: padToLine(descriptor.script.content, descriptor.script.loc.start.line),
+    }
+  }
 
   const scriptBlock = sfc.scriptSetup ?? sfc.script
   let scriptAst: TSESTree.Program | undefined
@@ -42,9 +63,15 @@ export function parseVueFile(source: string): ParsedFile {
         range: true,
         tolerant: true,
       })
+      if (scriptAst) attachParents(scriptAst)
     } catch {
     }
   }
 
-  return { sfc, scriptAst, source }
+  let templateAst: RootNode | undefined
+  if (sfc.template?.content) {
+    templateAst = parseTemplate(sfc.template.content) ?? undefined
+  }
+
+  return { sfc, scriptAst, templateAst, source }
 }

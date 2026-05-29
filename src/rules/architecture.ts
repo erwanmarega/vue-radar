@@ -1,4 +1,17 @@
 import type { Rule } from '../types'
+import { walkAst, walkElements, getStaticAttr, calleeName } from '../ast-utils'
+
+/** Set of call names used anywhere in the script AST. */
+function callNames(scriptAst: any): Set<string> {
+  const names = new Set<string>()
+  walkAst(scriptAst, (n: any) => {
+    if (n.type === 'CallExpression') {
+      const name = calleeName(n)
+      if (name) names.add(name)
+    }
+  })
+  return names
+}
 
 export const missingDefineEmits: Rule = {
   id: 'missing-define-emits',
@@ -6,13 +19,10 @@ export const missingDefineEmits: Rule = {
   category: 'architecture',
   severity: 'warning',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ''
-    if (!script) return
-
-    const hasEmit = /\$emit\s*\(|emit\s*\(/.test(script)
-    const hasDefineEmits = /defineEmits\s*[(<]/.test(script)
-
-    if (hasEmit && !hasDefineEmits) {
+    if (!ctx.sfc.scriptSetup || !ctx.scriptAst) return
+    const calls = callNames(ctx.scriptAst)
+    const hasEmit = calls.has('emit') || calls.has('$emit')
+    if (hasEmit && !calls.has('defineEmits')) {
       ctx.report({
         ruleId: 'missing-define-emits',
         category: 'architecture',
@@ -30,14 +40,23 @@ export const missingDefineProps: Rule = {
   category: 'architecture',
   severity: 'warning',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ''
-    if (!script) return
+    if (!ctx.sfc.scriptSetup || !ctx.scriptAst) return
 
-    const usesProps = /\$props\b/.test(script) || /props\.\w+/.test(script)
-    const hasDefineProps = /defineProps\s*[(<]/.test(script)
-    const hasWithDefaults = /withDefaults\s*\(/.test(script)
+    let usesProps = false
+    walkAst(ctx.scriptAst, (n: any) => {
+      if (
+        n.type === 'MemberExpression' &&
+        n.object?.type === 'Identifier' &&
+        (n.object.name === 'props' || n.object.name === '$props')
+      ) {
+        usesProps = true
+      }
+    })
 
-    if (usesProps && !hasDefineProps && !hasWithDefaults) {
+    const calls = callNames(ctx.scriptAst)
+    const hasDefineProps = calls.has('defineProps') || calls.has('withDefaults')
+
+    if (usesProps && !hasDefineProps) {
       ctx.report({
         ruleId: 'missing-define-props',
         category: 'architecture',
@@ -83,17 +102,16 @@ export const noExplicitAny: Rule = {
   category: 'architecture',
   severity: 'info',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
-
-    lines.forEach((line, i) => {
-      if (/:\s*any\b/.test(line) && !/\/\//.test(line.split(':')[0])) {
+    if (!ctx.scriptAst) return
+    // Real type-node detection — ignores `any` in comments, strings, or identifiers.
+    walkAst(ctx.scriptAst, (n: any) => {
+      if (n.type === 'TSAnyKeyword') {
         ctx.report({
           ruleId: 'no-explicit-any',
           category: 'architecture',
           severity: 'info',
           message: 'Explicit `any` type. Loses type safety across the component boundary.',
-          line: i + 1,
+          line: n.loc?.start.line,
           fix: 'Use `unknown` and narrow with type guards, or define an interface.',
         })
       }
@@ -107,16 +125,17 @@ export const missingExpose: Rule = {
   category: 'architecture',
   severity: 'info',
   check(ctx) {
-    const scriptSetup = ctx.sfc.scriptSetup?.content ?? ''
-    if (!scriptSetup) return
+    if (!ctx.sfc.scriptSetup || !ctx.scriptAst) return
+    if (!ctx.templateAst) return
 
-    // only flag if parent likely uses template refs (hard to know statically — skip)
-    // instead flag if the component has ref="..." in its own template (self-ref pattern)
-    const template = ctx.sfc.template?.content ?? ''
-    const hasTemplateRef = /ref\s*=\s*["']\w+["']/.test(template)
-    const hasDefineExpose = /defineExpose\s*\(/.test(scriptSetup)
+    // Self-referencing template ref pattern: a static ref="..." in the template.
+    let hasTemplateRef = false
+    walkElements(ctx.templateAst, el => {
+      if (getStaticAttr(el, 'ref')) hasTemplateRef = true
+    })
+    if (!hasTemplateRef) return
 
-    if (hasTemplateRef && !hasDefineExpose) {
+    if (!callNames(ctx.scriptAst).has('defineExpose')) {
       ctx.report({
         ruleId: 'missing-expose',
         category: 'architecture',

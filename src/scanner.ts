@@ -3,6 +3,9 @@ import { resolve, relative, join } from 'path'
 import fg from 'fast-glob'
 import { parseVueFile } from './parser'
 import { coreRules, nuxtRules, filterRules } from './rules'
+import { loadConfig } from './config'
+import type { ResolvedConfig } from './config'
+import { collectSuppressions, filterSuppressed } from './suppress'
 import type { Diagnostic, ScanResult, Category } from './types'
 
 const SEVERITY_WEIGHT: Record<string, number> = {
@@ -30,6 +33,10 @@ export interface ScanOptions {
   diffFiles?: string[]
   only?: string[]
   skip?: string[]
+  /** Path to an explicit config file. When omitted, auto-discovered in `dir`. */
+  configPath?: string
+  /** Pre-resolved config (overrides file discovery). */
+  config?: ResolvedConfig
 }
 
 export async function scan(dir: string, opts: ScanOptions = {}): Promise<ScanResult> {
@@ -37,8 +44,13 @@ export async function scan(dir: string, opts: ScanOptions = {}): Promise<ScanRes
   const absDir = resolve(dir)
   const nuxt = isNuxtProject(absDir)
 
+  const config = opts.config ?? loadConfig(absDir, opts.configPath)
+
   const baseRules = nuxt ? [...coreRules, ...nuxtRules] : coreRules
-  const rules = filterRules(baseRules, opts.only, opts.skip)
+  // Rules turned off in config are merged into the skip list. CLI --skip wins
+  // by virtue of being unioned, and CLI --rule (only) still narrows the set.
+  const skip = [...(opts.skip ?? []), ...config.off]
+  const rules = filterRules(baseRules, opts.only, skip.length ? skip : undefined)
 
   let files: string[]
 
@@ -48,7 +60,13 @@ export async function scan(dir: string, opts: ScanOptions = {}): Promise<ScanRes
     files = await fg('**/*.vue', {
       cwd: absDir,
       absolute: true,
-      ignore: ['**/node_modules/**', '**/dist/**', '**/.nuxt/**', '**/.output/**'],
+      ignore: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/.nuxt/**',
+        '**/.output/**',
+        ...config.ignore,
+      ],
     })
   }
 
@@ -73,13 +91,17 @@ export async function scan(dir: string, opts: ScanOptions = {}): Promise<ScanRes
         source,
         sfc: parsed.sfc,
         scriptAst: parsed.scriptAst,
+        templateAst: parsed.templateAst,
         report(diag) {
-          fileDiagnostics.push({ ...diag, file: rel })
+          const severity = config.severityOverrides[diag.ruleId] ?? diag.severity
+          fileDiagnostics.push({ ...diag, severity, file: rel })
         },
       })
     }
 
-    allDiagnostics.push(...fileDiagnostics)
+    // Drop diagnostics silenced by inline directives (line-accurate).
+    const suppressions = collectSuppressions(source)
+    allDiagnostics.push(...filterSuppressed(suppressions, fileDiagnostics))
   }
 
   const byCategory = allDiagnostics.reduce((acc, d) => {

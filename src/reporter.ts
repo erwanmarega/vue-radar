@@ -14,11 +14,19 @@ const SEVERITY_COLOR: Record<string, (s: string) => string> = {
 }
 
 const CATEGORY_COLOR: Record<Category, (s: string) => string> = {
-  security: (s) => chalk.bgRed.white(s),
-  correctness: (s) => chalk.red(s),
-  performance: (s) => chalk.yellow(s),
+  security:     (s) => chalk.bgRed.white(s),
+  correctness:  (s) => chalk.red(s),
+  performance:  (s) => chalk.yellow(s),
   architecture: (s) => chalk.blue(s),
-  composition: (s) => chalk.magenta(s),
+  composition:  (s) => chalk.magenta(s),
+}
+
+const CATEGORY_DOT: Record<Category, (s: string) => string> = {
+  security:     (s) => chalk.red(s),
+  correctness:  (s) => chalk.red(s),
+  performance:  (s) => chalk.yellow(s),
+  architecture: (s) => chalk.blue(s),
+  composition:  (s) => chalk.magenta(s),
 }
 
 function scoreColor(score: number): (s: string) => string {
@@ -27,10 +35,41 @@ function scoreColor(score: number): (s: string) => string {
   return (s) => chalk.red(s)
 }
 
-function scoreBar(score: number): string {
-  const filled = Math.round(score / 5)
-  const empty = 20 - filled
-  return `[${'█'.repeat(filled)}${'░'.repeat(empty)}]`
+function scoreGrade(score: number): string {
+  if (score >= 90) return 'A'
+  if (score >= 80) return 'B'
+  if (score >= 70) return 'C'
+  if (score >= 50) return 'D'
+  return 'F'
+}
+
+function renderScoreBlock(score: number, files: number, duration: number, errors: number, warnings: number, infos: number): void {
+  const sc = scoreColor(score)
+  const grade = scoreGrade(score)
+  const BAR_WIDTH = 30
+  const filled = Math.round((score / 100) * BAR_WIDTH)
+  const empty = BAR_WIDTH - filled
+
+  const bar = sc('█'.repeat(filled)) + chalk.dim('░'.repeat(empty))
+
+  console.log(chalk.dim('  ' + '─'.repeat(54)))
+  console.log()
+
+  console.log(`  ${chalk.dim('score')}  ${sc(chalk.bold(String(score).padStart(3)))}${chalk.dim('/100')}  ${sc(chalk.bold(grade))}`)
+  console.log()
+  console.log(`  ${bar}`)
+  console.log()
+
+  const cats: { label: string; col: (s: string) => string; count: number }[] = []
+  console.log(
+    `  ${chalk.dim('files')} ${files}  ` +
+    `${chalk.dim('time')} ${duration}ms  ` +
+    `${chalk.red(`${errors}e`)}  ` +
+    `${chalk.yellow(`${warnings}w`)}  ` +
+    `${chalk.cyan(`${infos}i`)}`
+  )
+  console.log()
+  void cats
 }
 
 function formatDiagnostic(d: Diagnostic): string {
@@ -51,9 +90,12 @@ function formatDiagnostic(d: Diagnostic): string {
 export function printReport(result: ScanResult): void {
   const { score, files, diagnostics, duration, byCategory } = result
 
+  const errors   = diagnostics.filter(d => d.severity === 'error').length
+  const warnings = diagnostics.filter(d => d.severity === 'warning').length
+  const infos    = diagnostics.filter(d => d.severity === 'info').length
+
   console.log()
-  console.log(chalk.bold('  vue-radar') + chalk.dim(' — codebase health report'))
-  console.log(chalk.dim('  ' + '─'.repeat(50)))
+  console.log(`  ${chalk.bold('vue-radar')}  ${chalk.dim('─')}  ${chalk.dim('codebase health')}`)
   console.log()
 
   const categories: Category[] = ['security', 'correctness', 'performance', 'architecture', 'composition']
@@ -63,38 +105,62 @@ export function printReport(result: ScanResult): void {
     if (diags.length === 0) continue
 
     const colorFn = CATEGORY_COLOR[cat]
-    console.log(`  ${colorFn(` ${cat.toUpperCase()} `)}  ${chalk.dim(`${diags.length} issue${diags.length !== 1 ? 's' : ''}`)}`)
+    const dot = CATEGORY_DOT[cat]('●')
+    console.log(`  ${dot}  ${colorFn(` ${cat.toUpperCase()} `)}  ${chalk.dim(`${diags.length} issue${diags.length !== 1 ? 's' : ''}`)}`)
     console.log()
     diags.forEach(d => process.stdout.write(formatDiagnostic(d)))
     console.log()
   }
 
-  // summary line
-  const errors = diagnostics.filter(d => d.severity === 'error').length
-  const warnings = diagnostics.filter(d => d.severity === 'warning').length
-  const infos = diagnostics.filter(d => d.severity === 'info').length
-
-  console.log(chalk.dim('  ' + '─'.repeat(50)))
-  console.log()
-
-  const sc = scoreColor(score)
-  console.log(`  Health score  ${sc(scoreBar(score))}  ${sc(chalk.bold(score + '/100'))}`)
-  console.log()
-  console.log(
-    `  ${chalk.dim('Scanned')} ${files} file${files !== 1 ? 's' : ''}  ` +
-    `${chalk.dim('in')} ${duration}ms  ` +
-    `${chalk.red(`${errors} error${errors !== 1 ? 's' : ''}`)}  ` +
-    `${chalk.yellow(`${warnings} warning${warnings !== 1 ? 's' : ''}`)}  ` +
-    `${chalk.cyan(`${infos} hint${infos !== 1 ? 's' : ''}`)}`
-  )
-  console.log()
-
   if (diagnostics.length === 0) {
-    console.log(`  ${chalk.green('✓')} No issues found. Ship it.`)
+    console.log(`  ${chalk.green('✓')} No issues found.`)
     console.log()
+  }
+
+  renderScoreBlock(score, files, duration, errors, warnings, infos)
+}
+
+const SEVERITY_RANK: Record<string, number> = { error: 0, warning: 1, info: 2 }
+
+/**
+ * Pre-computed presentation fields so an agent (e.g. the /vue-radar Claude
+ * skill) can render the report by interpolation alone — no manual arithmetic
+ * for the bar, grade, icon or counts, which is where rendering drifts.
+ */
+function buildSummary(result: ScanResult) {
+  const { score, files, diagnostics, duration } = result
+  const errors   = diagnostics.filter(d => d.severity === 'error').length
+  const warnings = diagnostics.filter(d => d.severity === 'warning').length
+  const infos    = diagnostics.filter(d => d.severity === 'info').length
+
+  const BAR_WIDTH = 20
+  const filled = Math.round((score / 100) * BAR_WIDTH)
+  const bar = '█'.repeat(filled) + '░'.repeat(BAR_WIDTH - filled)
+
+  const scoreIcon = score >= 80 ? '✅' : score >= 50 ? '⚠️' : '🔴'
+
+  // Highest-severity, earliest issue — what the agent should tell the user to
+  // fix first.
+  const priority = [...diagnostics].sort(
+    (a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9)
+  )[0]
+
+  return {
+    score,
+    grade: scoreGrade(score),
+    scoreIcon,
+    bar,
+    files,
+    errors,
+    warnings,
+    infos,
+    duration,
+    priority: priority
+      ? { ruleId: priority.ruleId, file: priority.file, line: priority.line, severity: priority.severity }
+      : null,
   }
 }
 
 export function printJson(result: ScanResult): void {
-  console.log(JSON.stringify(result, null, 2))
+  console.log(JSON.stringify({ ...result, summary: buildSummary(result) }, null, 2))
 }

@@ -6,35 +6,62 @@ type Agent = 'claude-code' | 'cursor' | 'codex' | 'opencode' | 'auto'
 
 const CLAUDE_SKILL = `# vue-radar
 
-Run \`vue-radar\` to scan the Vue.js codebase for issues.
+Run \`vue-radar --json\` and render the result as Markdown using **exactly** the
+format below. Do not invent tables, sections, or values.
 
-## When to use
-- Before opening a PR
-- After writing or editing Vue components
-- When reviewing unfamiliar Vue code
+The JSON already contains a \`summary\` object with everything pre-computed — use
+those fields verbatim. **Never recompute the bar, grade, icon, or counts
+yourself.** The only thing you write from scratch is the one-line priority advice.
 
-## What it checks
-| Category | Examples |
-|---|---|
-| security | v-html XSS, dynamic :href |
-| correctness | v-if+v-for same element, missing :key, ref .value misuse |
-| performance | no lazy components, index as key, deep ref on large objects |
-| architecture | missing defineEmits/Props, component too large, explicit any |
-| composition | watch without cleanup, side effects in computed, missing onUnmounted |
-
-## Commands
-\`\`\`bash
-vue-radar                   # scan entire project
-vue-radar --diff            # scan only changed files (git diff vs main)
-vue-radar --json            # JSON output for programmatic use
-vue-radar --rule v-html-unsafe,missing-key-in-v-for  # specific rules
-vue-radar --skip no-async-component                  # exclude rules
-vue-radar --fail-on warning # exit 1 on warnings too
+\`\`\`
+summary.score      number 0–100        summary.bar       20-char █/░ string
+summary.scoreIcon  ✅ / ⚠️ / 🔴          summary.grade     A–F
+summary.files      file count          summary.duration  ms
+summary.errors / .warnings / .infos    severity counts
+summary.priority   { ruleId, file, line, severity } | null
 \`\`\`
 
-## Score
-0–100. Deductions: error=10pts, warning=4pts, info=1pt.
-A score below 70 should block a PR merge.
+## Output format (copy this structure exactly)
+
+---
+
+## {summary.scoreIcon} vue-radar — {summary.score}/100  ·  grade {summary.grade}
+
+\`{summary.bar}\`
+
+{summary.files} files · {summary.errors} errors · {summary.warnings} warnings · {summary.duration}ms
+
+---
+
+{for each category in diagnostics that has at least one issue, in this order —
+security, correctness, performance, architecture, composition:}
+### {cat_emoji} {Category}
+{for each issue in that category:}
+{sev_icon} \`{file}:{line}\` **{ruleId}**
+{message}
+> ↳ {fix}
+
+{end}
+
+---
+
+*{one sentence of priority advice, referencing summary.priority — e.g. "Fix
+v-html-unsafe in LoginForm.vue first — it's the only error."}*
+
+## Legend
+
+**cat_emoji:** 🔒 security · ✅ correctness · ⚡ performance · 🏗 architecture · 🔄 composition
+**sev_icon:** 🔴 error · 🟡 warning · 🔵 info
+
+If there are zero diagnostics, respond with a single line and stop:
+\`✅ **vue-radar — 100/100** — nothing to fix.\`
+
+## Flags
+\`\`\`
+vue-radar --json            full project
+vue-radar --json --diff     changed files only
+vue-radar --json --skip no-async-component
+\`\`\`
 `
 
 const CURSOR_RULES = `

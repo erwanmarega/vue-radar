@@ -1,4 +1,37 @@
 import type { Rule } from '../types'
+import {
+  walkAst,
+  collectCalls,
+  calleeName,
+  calleeObjectName,
+  isInsideSetup,
+} from '../ast-utils'
+
+const FETCH_CALLS = new Set([
+  'fetch', '$fetch', 'useFetch', 'useAsyncData', 'useLazyFetch', 'useLazyAsyncData',
+])
+
+/** A call that kicks off async I/O. */
+function isAsyncFetchCall(call: any): boolean {
+  const name = calleeName(call)
+  if (name && FETCH_CALLS.has(name)) return true
+  return calleeObjectName(call) === 'axios'
+}
+
+/** True if the subtree contains a watcher-cleanup call or `new AbortController`. */
+function hasCleanup(root: any): boolean {
+  let found = false
+  walkAst(root, (n: any) => {
+    if (n.type === 'CallExpression') {
+      const name = calleeName(n)
+      if (name === 'onWatcherCleanup' || name === 'onCleanup') found = true
+    }
+    if (n.type === 'NewExpression' && n.callee?.type === 'Identifier' && n.callee.name === 'AbortController') {
+      found = true
+    }
+  })
+  return found
+}
 
 export const watchMissingCleanup: Rule = {
   id: 'watch-missing-cleanup',
@@ -6,48 +39,42 @@ export const watchMissingCleanup: Rule = {
   category: 'composition',
   severity: 'warning',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
+    if (!ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      const name = calleeName(call)
+      if (name !== 'watch' && name !== 'watchEffect') continue
 
-    let inWatch = false
-    let braceDepth = 0
-    let watchStart = -1
-    let hasFetch = false
-    let hasCleanup = false
+      // Inspect the watcher's callback arguments only.
+      const args: any[] = (call as any).arguments ?? []
+      const fetchInside = args.some(a =>
+        collectCalls(a).some(c => c !== call && isAsyncFetchCall(c)),
+      )
+      if (!fetchInside) continue
+      if (args.some(a => hasCleanup(a))) continue
 
-    lines.forEach((line, i) => {
-      if (/\bwatch\s*\(|\bwatchEffect\s*\(/.test(line)) {
-        inWatch = true
-        watchStart = i
-        braceDepth = 0
-        hasFetch = false
-        hasCleanup = false
-      }
-
-      if (inWatch) {
-        braceDepth += (line.match(/\{/g) ?? []).length
-        braceDepth -= (line.match(/\}/g) ?? []).length
-
-        if (/\bfetch\s*\(|\baxios\b|\$fetch\b|useFetch|useAsyncData/.test(line)) hasFetch = true
-        if (/onWatcherCleanup|onCleanup|AbortController/.test(line)) hasCleanup = true
-
-        if (braceDepth <= 0 && watchStart >= 0) {
-          if (hasFetch && !hasCleanup) {
-            ctx.report({
-              ruleId: 'watch-missing-cleanup',
-              category: 'composition',
-              severity: 'warning',
-              message: 'Async fetch inside watch() without cleanup. Causes race conditions when deps change rapidly.',
-              line: watchStart + 1,
-              fix: 'Use onWatcherCleanup(() => controller.abort()) or AbortController to cancel stale requests.',
-            })
-          }
-          inWatch = false
-          watchStart = -1
-        }
-      }
-    })
+      ctx.report({
+        ruleId: 'watch-missing-cleanup',
+        category: 'composition',
+        severity: 'warning',
+        message: 'Async fetch inside watch() without cleanup. Causes race conditions when deps change rapidly.',
+        line: (call as any).loc?.start.line,
+        fix: 'Use onWatcherCleanup(() => controller.abort()) or AbortController to cancel stale requests.',
+      })
+    }
   },
+}
+
+const COMPUTED_SIDE_EFFECTS = new Set(['emit', '$emit'])
+
+/** A call that mutates state or performs I/O — illegal inside computed(). */
+function isSideEffectCall(call: any): boolean {
+  const name = calleeName(call)
+  if (name && (FETCH_CALLS.has(name) || COMPUTED_SIDE_EFFECTS.has(name))) return true
+  const obj = calleeObjectName(call)
+  if (obj === 'axios') return true
+  if (obj === 'console') return true
+  if (obj === 'router' && name === 'push') return true
+  return false
 }
 
 export const sideEffectInComputed: Rule = {
@@ -56,43 +83,33 @@ export const sideEffectInComputed: Rule = {
   category: 'composition',
   severity: 'error',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
-
-    let inComputed = false
-    let braceDepth = 0
-    let computedStart = -1
-
-    lines.forEach((line, i) => {
-      if (/\bcomputed\s*\(/.test(line)) {
-        inComputed = true
-        computedStart = i
-        braceDepth = 0
-      }
-
-      if (inComputed) {
-        braceDepth += (line.match(/\{/g) ?? []).length
-        braceDepth -= (line.match(/\}/g) ?? []).length
-
-        if (/\bfetch\s*\(|\baxios\b|\$fetch\b|\bemit\s*\(|\brouter\.push\b|console\.\w+/.test(line)) {
-          ctx.report({
-            ruleId: 'side-effect-in-computed',
-            category: 'composition',
-            severity: 'error',
-            message: 'Side effect inside computed(). Computed should be pure — only derive state, no mutations or async calls.',
-            line: i + 1,
-            fix: 'Move side effects to watch(), watchEffect(), or an event handler.',
-          })
-        }
-
-        if (braceDepth <= 0 && computedStart >= 0) {
-          inComputed = false
-          computedStart = -1
+    if (!ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      if (calleeName(call) !== 'computed') continue
+      const args: any[] = (call as any).arguments ?? []
+      for (const arg of args) {
+        for (const inner of collectCalls(arg)) {
+          if (inner === call) continue
+          if (isSideEffectCall(inner)) {
+            ctx.report({
+              ruleId: 'side-effect-in-computed',
+              category: 'composition',
+              severity: 'error',
+              message: 'Side effect inside computed(). Computed should be pure — only derive state, no mutations or async calls.',
+              line: (inner as any).loc?.start.line,
+              fix: 'Move side effects to watch(), watchEffect(), or an event handler.',
+            })
+          }
         }
       }
-    })
+    }
   },
 }
+
+const LIFECYCLE_HOOKS = new Set([
+  'onMounted', 'onUnmounted', 'onUpdated', 'onBeforeMount',
+  'onBeforeUnmount', 'onBeforeUpdate', 'onActivated', 'onDeactivated',
+])
 
 export const lifecycleInSetup: Rule = {
   id: 'lifecycle-outside-setup',
@@ -100,34 +117,21 @@ export const lifecycleInSetup: Rule = {
   category: 'composition',
   severity: 'error',
   check(ctx) {
-    const script = ctx.sfc.script?.content ?? ''
-    if (ctx.sfc.scriptSetup) return
-
-    if (!script) return
-
-    const lines = script.split('\n')
-    let inSetup = false
-    let setupDepth = 0
-
-    lines.forEach((line, i) => {
-      if (/\bsetup\s*\(/.test(line)) { inSetup = true; setupDepth = 0 }
-      if (inSetup) {
-        setupDepth += (line.match(/\{/g) ?? []).length
-        setupDepth -= (line.match(/\}/g) ?? []).length
-        if (setupDepth <= 0) inSetup = false
-      }
-
-      if (!inSetup && /\b(onMounted|onUnmounted|onUpdated|onBeforeMount|onCreated)\s*\(/.test(line)) {
-        ctx.report({
-          ruleId: 'lifecycle-outside-setup',
-          category: 'composition',
-          severity: 'error',
-          message: 'Composition API lifecycle hook called outside setup(). Hook will be silently ignored.',
-          line: i + 1,
-          fix: 'Move lifecycle hooks inside setup() or use <script setup>.',
-        })
-      }
-    })
+    // Only relevant to the Options API. <script setup> is implicitly setup.
+    if (ctx.sfc.scriptSetup || !ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      const name = calleeName(call)
+      if (!name || !LIFECYCLE_HOOKS.has(name)) continue
+      if (isInsideSetup(call)) continue
+      ctx.report({
+        ruleId: 'lifecycle-outside-setup',
+        category: 'composition',
+        severity: 'error',
+        message: 'Composition API lifecycle hook called outside setup(). Hook will be silently ignored.',
+        line: (call as any).loc?.start.line,
+        fix: 'Move lifecycle hooks inside setup() or use <script setup>.',
+      })
+    }
   },
 }
 
@@ -137,24 +141,12 @@ export const missingOnUnmounted: Rule = {
   category: 'composition',
   severity: 'warning',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
+    if (!ctx.scriptAst) return
+    const names = new Set(collectCalls(ctx.scriptAst).map(calleeName).filter(Boolean) as string[])
 
-    let hasAddEventListener = false
-    let hasSetInterval = false
-    let hasRemoveEventListener = false
-    let hasClearInterval = false
-    let hasOnUnmounted = false
+    const hasOnUnmounted = names.has('onUnmounted') || names.has('onBeforeUnmount')
 
-    lines.forEach(line => {
-      if (/addEventListener\s*\(/.test(line)) hasAddEventListener = true
-      if (/setInterval\s*\(/.test(line)) hasSetInterval = true
-      if (/removeEventListener\s*\(/.test(line)) hasRemoveEventListener = true
-      if (/clearInterval\s*\(/.test(line)) hasClearInterval = true
-      if (/onUnmounted\s*\(/.test(line)) hasOnUnmounted = true
-    })
-
-    if (hasAddEventListener && !hasRemoveEventListener && !hasOnUnmounted) {
+    if (names.has('addEventListener') && !names.has('removeEventListener') && !hasOnUnmounted) {
       ctx.report({
         ruleId: 'missing-on-unmounted-cleanup',
         category: 'composition',
@@ -164,7 +156,7 @@ export const missingOnUnmounted: Rule = {
       })
     }
 
-    if (hasSetInterval && !hasClearInterval && !hasOnUnmounted) {
+    if (names.has('setInterval') && !names.has('clearInterval') && !hasOnUnmounted) {
       ctx.report({
         ruleId: 'missing-on-unmounted-cleanup',
         category: 'composition',

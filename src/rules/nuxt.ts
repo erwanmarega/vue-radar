@@ -1,4 +1,9 @@
 import type { Rule } from '../types'
+import { walkAst, collectCalls, calleeName, isInsideSetup } from '../ast-utils'
+
+const SETUP_ONLY_FETCH = new Set([
+  'useFetch', 'useAsyncData', 'useLazyFetch', 'useLazyAsyncData',
+])
 
 export const nuxtUseFetchOutsideSetup: Rule = {
   id: 'nuxt-usefetch-outside-setup',
@@ -6,32 +11,21 @@ export const nuxtUseFetchOutsideSetup: Rule = {
   category: 'composition',
   severity: 'error',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    if (ctx.sfc.scriptSetup) return
-
-    const lines = script.split('\n')
-    let inSetup = false
-    let depth = 0
-
-    lines.forEach((line, i) => {
-      if (/\bsetup\s*\(/.test(line)) { inSetup = true; depth = 0 }
-      if (inSetup) {
-        depth += (line.match(/\{/g) ?? []).length
-        depth -= (line.match(/\}/g) ?? []).length
-        if (depth <= 0) inSetup = false
-      }
-
-      if (!inSetup && /\b(useFetch|useAsyncData|useLazyFetch|useLazyAsyncData)\s*\(/.test(line)) {
-        ctx.report({
-          ruleId: 'nuxt-usefetch-outside-setup',
-          category: 'composition',
-          severity: 'error',
-          message: 'useFetch/useAsyncData called outside setup(). These composables require the Nuxt composable context.',
-          line: i + 1,
-          fix: 'Move into setup() or use <script setup>.',
-        })
-      }
-    })
+    // <script setup> is always a valid context; only check the Options API.
+    if (ctx.sfc.scriptSetup || !ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      const name = calleeName(call)
+      if (!name || !SETUP_ONLY_FETCH.has(name)) continue
+      if (isInsideSetup(call)) continue
+      ctx.report({
+        ruleId: 'nuxt-usefetch-outside-setup',
+        category: 'composition',
+        severity: 'error',
+        message: 'useFetch/useAsyncData called outside setup(). These composables require the Nuxt composable context.',
+        line: (call as any).loc?.start.line,
+        fix: 'Move into setup() or use <script setup>.',
+      })
+    }
   },
 }
 
@@ -42,11 +36,10 @@ export const nuxtMissingPageMeta: Rule = {
   severity: 'info',
   check(ctx) {
     if (!/pages\/|layouts\//.test(ctx.filename)) return
+    if (!ctx.sfc.scriptSetup || !ctx.scriptAst) return
 
-    const script = ctx.sfc.scriptSetup?.content ?? ''
-    if (!script) return
-
-    if (!/definePageMeta\s*\(/.test(script)) {
+    const hasPageMeta = collectCalls(ctx.scriptAst).some(c => calleeName(c) === 'definePageMeta')
+    if (!hasPageMeta) {
       ctx.report({
         ruleId: 'nuxt-missing-page-meta',
         category: 'architecture',
@@ -58,39 +51,40 @@ export const nuxtMissingPageMeta: Rule = {
   },
 }
 
+const SETUP_ONLY_COMPOSABLES = new Set(['useRoute', 'useRouter', 'useNuxtApp', 'useState'])
+
 export const nuxtUseRouteOutsideSetup: Rule = {
   id: 'nuxt-use-route-outside-setup',
   name: 'useRoute/useRouter outside setup',
   category: 'composition',
   severity: 'error',
   check(ctx) {
-    if (ctx.sfc.scriptSetup) return
-
-    const script = ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
-    let inSetup = false
-    let depth = 0
-
-    lines.forEach((line, i) => {
-      if (/\bsetup\s*\(/.test(line)) { inSetup = true; depth = 0 }
-      if (inSetup) {
-        depth += (line.match(/\{/g) ?? []).length
-        depth -= (line.match(/\}/g) ?? []).length
-        if (depth <= 0) inSetup = false
-      }
-
-      if (!inSetup && /\b(useRoute|useRouter|useNuxtApp|useState)\s*\(/.test(line)) {
-        ctx.report({
-          ruleId: 'nuxt-use-route-outside-setup',
-          category: 'composition',
-          severity: 'error',
-          message: `Nuxt composable called outside setup context. Will throw "nuxt instance unavailable".`,
-          line: i + 1,
-          fix: 'Move into setup() or use <script setup>.',
-        })
-      }
-    })
+    if (ctx.sfc.scriptSetup || !ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      const name = calleeName(call)
+      if (!name || !SETUP_ONLY_COMPOSABLES.has(name)) continue
+      if (isInsideSetup(call)) continue
+      ctx.report({
+        ruleId: 'nuxt-use-route-outside-setup',
+        category: 'composition',
+        severity: 'error',
+        message: 'Nuxt composable called outside setup context. Will throw "nuxt instance unavailable".',
+        line: (call as any).loc?.start.line,
+        fix: 'Move into setup() or use <script setup>.',
+      })
+    }
   },
+}
+
+/** True if a useFetch/useAsyncData result destructures `error` or `status`. */
+function destructuresError(call: any): boolean {
+  const declarator = call.parent
+  if (declarator?.type !== 'VariableDeclarator') return false
+  const id = declarator.id
+  if (id?.type !== 'ObjectPattern') return false
+  return (id.properties ?? []).some((p: any) =>
+    p.type === 'Property' && p.key?.type === 'Identifier' && (p.key.name === 'error' || p.key.name === 'status'),
+  )
 }
 
 export const nuxtFetchWithoutErrorHandling: Rule = {
@@ -99,25 +93,26 @@ export const nuxtFetchWithoutErrorHandling: Rule = {
   category: 'correctness',
   severity: 'warning',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
-
-    lines.forEach((line, i) => {
-      if (/\b(useFetch|useAsyncData)\s*\(/.test(line)) {
-        if (!/\berror\b/.test(line) && !/\bstatus\b/.test(line)) {
-          ctx.report({
-            ruleId: 'nuxt-fetch-no-error-handling',
-            category: 'correctness',
-            severity: 'warning',
-            message: 'useFetch/useAsyncData without destructuring error. Network failures silently produce undefined data.',
-            line: i + 1,
-            fix: 'Destructure: const { data, error, pending } = useFetch(...) and handle error in template.',
-          })
-        }
-      }
-    })
+    if (!ctx.scriptAst) return
+    for (const call of collectCalls(ctx.scriptAst)) {
+      const name = calleeName(call)
+      if (name !== 'useFetch' && name !== 'useAsyncData') continue
+      if (destructuresError(call)) continue
+      ctx.report({
+        ruleId: 'nuxt-fetch-no-error-handling',
+        category: 'correctness',
+        severity: 'warning',
+        message: 'useFetch/useAsyncData without destructuring error. Network failures silently produce undefined data.',
+        line: (call as any).loc?.start.line,
+        fix: 'Destructure: const { data, error, pending } = useFetch(...) and handle error in template.',
+      })
+    }
   },
 }
+
+const SERVER_ONLY = new Set([
+  'fs', 'path', 'os', 'child_process', 'net', 'crypto', 'http', 'https', 'stream',
+])
 
 export const nuxtServerOnlyInClient: Rule = {
   id: 'nuxt-server-import-in-client',
@@ -125,24 +120,19 @@ export const nuxtServerOnlyInClient: Rule = {
   category: 'security',
   severity: 'error',
   check(ctx) {
-    const script = ctx.sfc.scriptSetup?.content ?? ctx.sfc.script?.content ?? ''
-    const lines = script.split('\n')
-
-    const SERVER_ONLY = ['fs', 'path', 'os', 'child_process', 'net', 'crypto', 'http', 'https', 'stream']
-    const re = new RegExp(`from\\s+['"](?:node:)?(${SERVER_ONLY.join('|')})['"]`)
-
-    lines.forEach((line, i) => {
-      if (re.test(line)) {
-        const mod = line.match(re)?.[1]
-        ctx.report({
-          ruleId: 'nuxt-server-import-in-client',
-          category: 'security',
-          severity: 'error',
-          message: `Node.js built-in "${mod}" imported in a component. Runs on client = crashes browser; exposes server internals.`,
-          line: i + 1,
-          fix: 'Move to server/api/ route or use #imports to access server-only utils.',
-        })
-      }
+    if (!ctx.scriptAst) return
+    walkAst(ctx.scriptAst, (n: any) => {
+      if (n.type !== 'ImportDeclaration') return
+      const src = String(n.source?.value ?? '').replace(/^node:/, '')
+      if (!SERVER_ONLY.has(src)) return
+      ctx.report({
+        ruleId: 'nuxt-server-import-in-client',
+        category: 'security',
+        severity: 'error',
+        message: `Node.js built-in "${src}" imported in a component. Runs on client = crashes browser; exposes server internals.`,
+        line: n.loc?.start.line,
+        fix: 'Move to server/api/ route or use #imports to access server-only utils.',
+      })
     })
   },
 }

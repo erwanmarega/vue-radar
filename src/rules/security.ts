@@ -1,4 +1,5 @@
 import type { Rule } from '../types'
+import { walkElements, getDirective, getBoundProp } from '../ast-utils'
 
 export const vHtmlUnsafe: Rule = {
   id: 'v-html-unsafe',
@@ -6,24 +7,24 @@ export const vHtmlUnsafe: Rule = {
   category: 'security',
   severity: 'error',
   check(ctx) {
-    const template = ctx.sfc.template?.content ?? ''
-    const lines = template.split('\n')
-
-    lines.forEach((line, i) => {
-      if (/v-html\s*=/.test(line)) {
-        // flag all v-html — even "safe" strings can be XSS vectors
-        ctx.report({
-          ruleId: 'v-html-unsafe',
-          category: 'security',
-          severity: 'error',
-          message: 'v-html renders raw HTML and is vulnerable to XSS. Use text interpolation {{ }} or sanitize with DOMPurify first.',
-          line: i + 1,
-          fix: 'Replace v-html with {{ }} or sanitize: v-html="sanitize(content)"',
-        })
-      }
+    if (!ctx.templateAst) return
+    walkElements(ctx.templateAst, el => {
+      const dir = getDirective(el, 'html')
+      if (!dir) return
+      ctx.report({
+        ruleId: 'v-html-unsafe',
+        category: 'security',
+        severity: 'error',
+        message: 'v-html renders raw HTML and is vulnerable to XSS. Use text interpolation {{ }} or sanitize with DOMPurify first.',
+        line: dir.loc.start.line,
+        fix: 'Replace v-html with {{ }} or sanitize: v-html="sanitize(content)"',
+      })
     })
   },
 }
+
+// Tags whose href can carry a javascript: URL.
+const HREF_TAGS = new Set(['a'])
 
 export const dynamicHrefBinding: Rule = {
   id: 'dynamic-href-unsafe',
@@ -31,21 +32,23 @@ export const dynamicHrefBinding: Rule = {
   category: 'security',
   severity: 'warning',
   check(ctx) {
-    const template = ctx.sfc.template?.content ?? ''
-    const lines = template.split('\n')
-
-    lines.forEach((line, i) => {
-      // :href bound to a variable (not a hardcoded string or route object)
-      if (/:href\s*=\s*["'](?!{?\s*['"`])[^'"]+["']/.test(line) || /:href\s*=\s*"\w/.test(line)) {
-        ctx.report({
-          ruleId: 'dynamic-href-unsafe',
-          category: 'security',
-          severity: 'warning',
-          message: 'Dynamic :href binding may allow javascript: URLs. Validate or whitelist the value.',
-          line: i + 1,
-          fix: 'Validate URL: const safeHref = computed(() => url.startsWith("https://") ? url : "#")',
-        })
-      }
+    if (!ctx.templateAst) return
+    walkElements(ctx.templateAst, el => {
+      if (!HREF_TAGS.has(el.tag)) return
+      const hrefDir = getBoundProp(el, 'href')
+      if (!hrefDir) return
+      const exp = (hrefDir.exp?.content ?? '').trim()
+      // Static string literals can't inject javascript: at runtime.
+      if (/^['"`]/.test(exp)) return
+      if (exp === '' || exp === '#') return
+      ctx.report({
+        ruleId: 'dynamic-href-unsafe',
+        category: 'security',
+        severity: 'warning',
+        message: `Dynamic :href on <a> may allow javascript: URLs (bound to: ${exp}). Validate the value.`,
+        line: hrefDir.loc.start.line,
+        fix: 'Validate URL: const safeHref = computed(() => /^https?:\\/\\//.test(url) ? url : "#")',
+      })
     })
   },
 }

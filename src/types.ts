@@ -1,4 +1,5 @@
 import type { TSESTree } from '@typescript-eslint/typescript-estree'
+import type { RootNode } from '@vue/compiler-dom'
 
 export type Severity = 'error' | 'warning' | 'info'
 export type Category = 'security' | 'performance' | 'correctness' | 'architecture' | 'composition'
@@ -28,6 +29,7 @@ export interface RuleContext {
   source: string
   sfc: ParsedSFC
   scriptAst?: TSESTree.Program
+  templateAst?: RootNode
   report: (diag: Omit<Diagnostic, 'file'>) => void
 }
 
