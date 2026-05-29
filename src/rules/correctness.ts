@@ -22,9 +22,8 @@ export const vIfVForSameElement: Rule = {
           ruleId: 'v-if-v-for-same-element',
           category: 'correctness',
           severity: 'error',
-          message: 'v-if and v-for on the same element. In Vue 3, v-if takes priority — it cannot access v-for variables.',
           line: el.loc.start.line,
-          fix: 'Wrap with <template v-for> and put v-if on the inner element, or filter the array with computed().',
+          msgId: 'v-if-v-for-same-element',
         })
       }
     })
@@ -47,9 +46,8 @@ export const missingKeyInVFor: Rule = {
         ruleId: 'missing-key-in-v-for',
         category: 'correctness',
         severity: 'warning',
-        message: 'v-for without :key. Vue cannot efficiently patch the DOM without stable keys.',
         line: vFor.loc.start.line,
-        fix: 'Add :key="item.id" — use a stable unique identifier, not the loop index.',
+        msgId: 'missing-key-in-v-for',
       })
     })
   },
@@ -80,9 +78,9 @@ export const missingDotValue: Rule = {
           ruleId: 'missing-dot-value',
           category: 'correctness',
           severity: 'warning',
-          message: `"${name}" is a ref but is assigned without .value. This overwrites the ref object, losing reactivity.`,
           line: n.loc?.start.line,
-          fix: `Use ${name}.value = ... instead of ${name} = ...`,
+          msgId: 'missing-dot-value',
+          params: { name },
         })
       }
     })
@@ -111,9 +109,9 @@ export const directReactiveMutation: Rule = {
           ruleId: 'direct-reactive-mutation',
           category: 'correctness',
           severity: 'error',
-          message: `Replacing reactive object "${name}" breaks reactivity. The proxy reference becomes stale.`,
           line: n.loc?.start.line,
-          fix: `Mutate properties in-place: Object.assign(${name}, newData) or use ref() instead.`,
+          msgId: 'direct-reactive-mutation',
+          params: { name },
         })
       }
     })

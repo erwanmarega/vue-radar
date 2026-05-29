@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { scan } from './scanner'
+import { scan, computeRoot } from './scanner'
 import { loadConfig } from './config'
+import { resolveLang } from './i18n'
 import { printReport, printJson } from './reporter'
 import { install } from './commands/install'
 import { initAction } from './commands/init-action'
 import { execSync } from 'child_process'
-import { resolve } from 'path'
 
 const program = new Command()
 
@@ -18,19 +18,21 @@ program
 program
   .command('scan', { isDefault: true })
   .description('Scan Vue components for issues')
-  .argument('[dir]', 'directory to scan', '.')
+  .argument('[targets...]', 'files, directories or globs to scan (default: current directory)')
   .option('--json', 'output results as JSON')
   .option('--diff', 'scan only files changed vs main/master branch')
   .option('--rule <ids>', 'run only these rule IDs (comma-separated)')
   .option('--skip <ids>', 'skip these rule IDs (comma-separated)')
   .option('--config <path>', 'path to a vue-radar config file (default: auto-detect)')
+  .option('--lang <code>', 'report language: en | fr (default: config, then system locale)')
   .option('--fail-on <level>', 'exit 1 if issues at this severity exist (error|warning|info)')
-  .action(async (dir: string, opts: {
+  .action(async (targets: string[], opts: {
     json?: boolean
     diff?: boolean
     rule?: string
     skip?: string
     config?: string
+    lang?: string
     failOn?: string
   }) => {
     let diffFiles: string[] | undefined
@@ -52,20 +54,24 @@ program
     const only = opts.rule ? opts.rule.split(',').map(s => s.trim()) : undefined
     const skip = opts.skip ? opts.skip.split(',').map(s => s.trim()) : undefined
 
+    const targetList = targets.length ? targets : ['.']
+    const root = opts.diff ? process.cwd() : computeRoot(targetList)
+
     let config
     try {
-      config = loadConfig(resolve(dir), opts.config)
+      config = loadConfig(root, opts.config)
     } catch (e) {
       console.error((e as Error).message)
       process.exit(1)
     }
 
-    const result = await scan(dir, { diffFiles, only, skip, config })
+    const lang = resolveLang(opts.lang, config.lang)
+    const result = await scan(targetList, { diffFiles, only, skip, config, lang })
 
     if (opts.json) {
       printJson(result)
     } else {
-      printReport(result)
+      printReport(result, lang)
     }
 
     // Precedence: --fail-on flag > config.failOn > 'error'.

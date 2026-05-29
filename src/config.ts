@@ -17,6 +17,8 @@ export interface VueRadarConfig {
   ignore?: string[]
   /** Severity threshold that makes the CLI exit non-zero. */
   failOn?: Severity
+  /** Report language: 'en' | 'fr'. */
+  lang?: string
 }
 
 export interface ResolvedConfig {
@@ -26,6 +28,7 @@ export interface ResolvedConfig {
   severityOverrides: Record<string, Severity>
   ignore: string[]
   failOn?: Severity
+  lang?: string
 }
 
 const CONFIG_FILENAMES = [
@@ -87,6 +90,7 @@ export function loadConfig(dir: string, explicit?: string): ResolvedConfig {
 
   if (Array.isArray(raw.ignore)) resolved.ignore = raw.ignore
   if (raw.failOn) resolved.failOn = raw.failOn
+  if (raw.lang) resolved.lang = raw.lang
 
   return resolved
 }

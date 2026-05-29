@@ -27,8 +27,7 @@ export const missingDefineEmits: Rule = {
         ruleId: 'missing-define-emits',
         category: 'architecture',
         severity: 'warning',
-        message: 'Component emits events but has no defineEmits(). Missing type contract and IDE autocomplete.',
-        fix: 'Add: const emit = defineEmits<{ change: [value: string] }>()',
+        msgId: 'missing-define-emits',
       })
     }
   },
@@ -61,8 +60,7 @@ export const missingDefineProps: Rule = {
         ruleId: 'missing-define-props',
         category: 'architecture',
         severity: 'warning',
-        message: 'Component accesses props without defineProps(). Props are untyped and unvalidated.',
-        fix: 'Add: const props = defineProps<{ title: string }>()',
+        msgId: 'missing-define-props',
       })
     }
   },
@@ -81,16 +79,16 @@ export const componentTooLarge: Rule = {
         ruleId: 'component-too-large',
         category: 'architecture',
         severity: 'error',
-        message: `Component is ${lines} lines. Components over 400 lines are hard to test and understand.`,
-        fix: 'Extract composables (useXxx.ts) for logic, split template into child components.',
+        msgId: 'component-too-large-error',
+        params: { lines },
       })
     } else if (lines > 250) {
       ctx.report({
         ruleId: 'component-too-large',
         category: 'architecture',
         severity: 'info',
-        message: `Component is ${lines} lines. Consider splitting logic into composables.`,
-        fix: 'Extract reusable logic to composables/useXxx.ts',
+        msgId: 'component-too-large-warn',
+        params: { lines },
       })
     }
   },
@@ -110,9 +108,8 @@ export const noExplicitAny: Rule = {
           ruleId: 'no-explicit-any',
           category: 'architecture',
           severity: 'info',
-          message: 'Explicit `any` type. Loses type safety across the component boundary.',
           line: n.loc?.start.line,
-          fix: 'Use `unknown` and narrow with type guards, or define an interface.',
+          msgId: 'no-explicit-any',
         })
       }
     })
@@ -140,8 +137,7 @@ export const missingExpose: Rule = {
         ruleId: 'missing-expose',
         category: 'architecture',
         severity: 'info',
-        message: 'Component uses template refs internally. If parent accesses this ref, add defineExpose() to control the public API.',
-        fix: 'Add defineExpose({ methodName }) to explicitly expose what parent can access.',
+        msgId: 'missing-expose',
       })
     }
   },

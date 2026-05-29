@@ -21,9 +21,9 @@ export const noAsyncComponent: Rule = {
         ruleId: 'no-async-component',
         category: 'performance',
         severity: 'info',
-        message: `Static import of "${name}" increases initial bundle size.`,
         line: node.loc?.start.line,
-        fix: `const ${name} = defineAsyncComponent(() => import('${source}'))`,
+        msgId: 'no-async-component',
+        params: { name, source },
       })
     }
   },
@@ -45,9 +45,8 @@ export const inlineComplexHandler: Rule = {
               ruleId: 'inline-complex-handler',
               category: 'performance',
               severity: 'info',
-              message: 'Long inline event handler in template. Hard to test and re-parsed on every render.',
               line: p.loc.start.line,
-              fix: 'Extract to a named method in <script setup>.',
+              msgId: 'inline-complex-handler',
             })
           }
         }
@@ -72,9 +71,8 @@ export const missingShallowRef: Rule = {
           ruleId: 'missing-shallow-ref',
           category: 'performance',
           severity: 'info',
-          message: 'ref() deep-tracks all nested properties. For large arrays/objects, consider shallowRef().',
           line: n.loc?.start.line,
-          fix: 'Use shallowRef() if you only replace the whole value, not mutate nested props.',
+          msgId: 'missing-shallow-ref',
         })
       }
     })
@@ -102,9 +100,8 @@ export const vForWithIndex: Rule = {
           ruleId: 'v-for-index-as-key',
           category: 'performance',
           severity: 'warning',
-          message: 'Array index as :key causes wrong DOM reuse when list order changes.',
           line: keyDir.loc.start.line,
-          fix: 'Use a stable unique ID: :key="item.id"',
+          msgId: 'v-for-index-as-key',
         })
       }
     })

@@ -21,9 +21,8 @@ export const nuxtUseFetchOutsideSetup: Rule = {
         ruleId: 'nuxt-usefetch-outside-setup',
         category: 'composition',
         severity: 'error',
-        message: 'useFetch/useAsyncData called outside setup(). These composables require the Nuxt composable context.',
         line: (call as any).loc?.start.line,
-        fix: 'Move into setup() or use <script setup>.',
+        msgId: 'nuxt-usefetch-outside-setup',
       })
     }
   },
@@ -44,8 +43,7 @@ export const nuxtMissingPageMeta: Rule = {
         ruleId: 'nuxt-missing-page-meta',
         category: 'architecture',
         severity: 'info',
-        message: 'Nuxt page component without definePageMeta(). Missing route metadata (title, middleware, layout, auth).',
-        fix: "Add: definePageMeta({ title: 'Page Title', middleware: 'auth' })",
+        msgId: 'nuxt-missing-page-meta',
       })
     }
   },
@@ -68,9 +66,8 @@ export const nuxtUseRouteOutsideSetup: Rule = {
         ruleId: 'nuxt-use-route-outside-setup',
         category: 'composition',
         severity: 'error',
-        message: 'Nuxt composable called outside setup context. Will throw "nuxt instance unavailable".',
         line: (call as any).loc?.start.line,
-        fix: 'Move into setup() or use <script setup>.',
+        msgId: 'nuxt-use-route-outside-setup',
       })
     }
   },
@@ -102,9 +99,8 @@ export const nuxtFetchWithoutErrorHandling: Rule = {
         ruleId: 'nuxt-fetch-no-error-handling',
         category: 'correctness',
         severity: 'warning',
-        message: 'useFetch/useAsyncData without destructuring error. Network failures silently produce undefined data.',
         line: (call as any).loc?.start.line,
-        fix: 'Destructure: const { data, error, pending } = useFetch(...) and handle error in template.',
+        msgId: 'nuxt-fetch-no-error-handling',
       })
     }
   },
@@ -129,9 +125,9 @@ export const nuxtServerOnlyInClient: Rule = {
         ruleId: 'nuxt-server-import-in-client',
         category: 'security',
         severity: 'error',
-        message: `Node.js built-in "${src}" imported in a component. Runs on client = crashes browser; exposes server internals.`,
         line: n.loc?.start.line,
-        fix: 'Move to server/api/ route or use #imports to access server-only utils.',
+        msgId: 'nuxt-server-import-in-client',
+        params: { mod: src },
       })
     })
   },

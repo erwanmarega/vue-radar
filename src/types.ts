@@ -24,13 +24,24 @@ export interface ParsedSFC {
   scriptSetup?: SFCBlock
 }
 
+export interface ReportInput {
+  ruleId: string
+  category: Category
+  severity: Severity
+  line?: number
+  /** Message catalog key resolved against the active language. */
+  msgId: string
+  /** Interpolation values for the catalog entry. */
+  params?: Record<string, string | number>
+}
+
 export interface RuleContext {
   filename: string
   source: string
   sfc: ParsedSFC
   scriptAst?: TSESTree.Program
   templateAst?: RootNode
-  report: (diag: Omit<Diagnostic, 'file'>) => void
+  report: (diag: ReportInput) => void
 }
 
 export interface Rule {

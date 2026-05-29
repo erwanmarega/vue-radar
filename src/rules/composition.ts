@@ -56,9 +56,8 @@ export const watchMissingCleanup: Rule = {
         ruleId: 'watch-missing-cleanup',
         category: 'composition',
         severity: 'warning',
-        message: 'Async fetch inside watch() without cleanup. Causes race conditions when deps change rapidly.',
         line: (call as any).loc?.start.line,
-        fix: 'Use onWatcherCleanup(() => controller.abort()) or AbortController to cancel stale requests.',
+        msgId: 'watch-missing-cleanup',
       })
     }
   },
@@ -95,9 +94,8 @@ export const sideEffectInComputed: Rule = {
               ruleId: 'side-effect-in-computed',
               category: 'composition',
               severity: 'error',
-              message: 'Side effect inside computed(). Computed should be pure — only derive state, no mutations or async calls.',
               line: (inner as any).loc?.start.line,
-              fix: 'Move side effects to watch(), watchEffect(), or an event handler.',
+              msgId: 'side-effect-in-computed',
             })
           }
         }
@@ -127,9 +125,8 @@ export const lifecycleInSetup: Rule = {
         ruleId: 'lifecycle-outside-setup',
         category: 'composition',
         severity: 'error',
-        message: 'Composition API lifecycle hook called outside setup(). Hook will be silently ignored.',
         line: (call as any).loc?.start.line,
-        fix: 'Move lifecycle hooks inside setup() or use <script setup>.',
+        msgId: 'lifecycle-outside-setup',
       })
     }
   },
@@ -151,8 +148,7 @@ export const missingOnUnmounted: Rule = {
         ruleId: 'missing-on-unmounted-cleanup',
         category: 'composition',
         severity: 'warning',
-        message: 'addEventListener() without removeEventListener() in onUnmounted(). Memory leak on component destroy.',
-        fix: 'Add onUnmounted(() => el.removeEventListener(...))',
+        msgId: 'missing-on-unmounted-listener',
       })
     }
 
@@ -161,8 +157,7 @@ export const missingOnUnmounted: Rule = {
         ruleId: 'missing-on-unmounted-cleanup',
         category: 'composition',
         severity: 'warning',
-        message: 'setInterval() without clearInterval() in onUnmounted(). Timer keeps running after component unmounts.',
-        fix: 'Add onUnmounted(() => clearInterval(timer))',
+        msgId: 'missing-on-unmounted-interval',
       })
     }
   },

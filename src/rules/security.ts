@@ -15,9 +15,8 @@ export const vHtmlUnsafe: Rule = {
         ruleId: 'v-html-unsafe',
         category: 'security',
         severity: 'error',
-        message: 'v-html renders raw HTML and is vulnerable to XSS. Use text interpolation {{ }} or sanitize with DOMPurify first.',
         line: dir.loc.start.line,
-        fix: 'Replace v-html with {{ }} or sanitize: v-html="sanitize(content)"',
+        msgId: 'v-html-unsafe',
       })
     })
   },
@@ -45,9 +44,9 @@ export const dynamicHrefBinding: Rule = {
         ruleId: 'dynamic-href-unsafe',
         category: 'security',
         severity: 'warning',
-        message: `Dynamic :href on <a> may allow javascript: URLs (bound to: ${exp}). Validate the value.`,
         line: hrefDir.loc.start.line,
-        fix: 'Validate URL: const safeHref = computed(() => /^https?:\\/\\//.test(url) ? url : "#")',
+        msgId: 'dynamic-href-unsafe',
+        params: { exp },
       })
     })
   },

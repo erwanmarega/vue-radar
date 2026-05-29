@@ -1,4 +1,6 @@
 import chalk from 'chalk'
+import { uiStrings } from './i18n'
+import type { Lang } from './i18n'
 import type { ScanResult, Diagnostic, Category } from './types'
 
 const SEVERITY_ICON: Record<string, string> = {
@@ -43,7 +45,8 @@ function scoreGrade(score: number): string {
   return 'F'
 }
 
-function renderScoreBlock(score: number, files: number, duration: number, errors: number, warnings: number, infos: number): void {
+function renderScoreBlock(lang: Lang, score: number, files: number, duration: number, errors: number, warnings: number, infos: number): void {
+  const ui = uiStrings(lang)
   const sc = scoreColor(score)
   const grade = scoreGrade(score)
   const BAR_WIDTH = 30
@@ -55,21 +58,19 @@ function renderScoreBlock(score: number, files: number, duration: number, errors
   console.log(chalk.dim('  ' + '─'.repeat(54)))
   console.log()
 
-  console.log(`  ${chalk.dim('score')}  ${sc(chalk.bold(String(score).padStart(3)))}${chalk.dim('/100')}  ${sc(chalk.bold(grade))}`)
+  console.log(`  ${chalk.dim(ui.score)}  ${sc(chalk.bold(String(score).padStart(3)))}${chalk.dim('/100')}  ${sc(chalk.bold(grade))}`)
   console.log()
   console.log(`  ${bar}`)
   console.log()
 
-  const cats: { label: string; col: (s: string) => string; count: number }[] = []
   console.log(
-    `  ${chalk.dim('files')} ${files}  ` +
-    `${chalk.dim('time')} ${duration}ms  ` +
+    `  ${chalk.dim(ui.files)} ${files}  ` +
+    `${chalk.dim(ui.time)} ${duration}ms  ` +
     `${chalk.red(`${errors}e`)}  ` +
     `${chalk.yellow(`${warnings}w`)}  ` +
     `${chalk.cyan(`${infos}i`)}`
   )
   console.log()
-  void cats
 }
 
 function formatDiagnostic(d: Diagnostic): string {
@@ -87,15 +88,16 @@ function formatDiagnostic(d: Diagnostic): string {
   return out
 }
 
-export function printReport(result: ScanResult): void {
+export function printReport(result: ScanResult, lang: Lang = 'en'): void {
   const { score, files, diagnostics, duration, byCategory } = result
+  const ui = uiStrings(lang)
 
   const errors   = diagnostics.filter(d => d.severity === 'error').length
   const warnings = diagnostics.filter(d => d.severity === 'warning').length
   const infos    = diagnostics.filter(d => d.severity === 'info').length
 
   console.log()
-  console.log(`  ${chalk.bold('vue-radar')}  ${chalk.dim('─')}  ${chalk.dim('codebase health')}`)
+  console.log(`  ${chalk.bold('vue-radar')}  ${chalk.dim('─')}  ${chalk.dim(ui.health)}`)
   console.log()
 
   const categories: Category[] = ['security', 'correctness', 'performance', 'architecture', 'composition']
@@ -106,18 +108,19 @@ export function printReport(result: ScanResult): void {
 
     const colorFn = CATEGORY_COLOR[cat]
     const dot = CATEGORY_DOT[cat]('●')
-    console.log(`  ${dot}  ${colorFn(` ${cat.toUpperCase()} `)}  ${chalk.dim(`${diags.length} issue${diags.length !== 1 ? 's' : ''}`)}`)
+    const label = diags.length !== 1 ? ui.issues : ui.issue
+    console.log(`  ${dot}  ${colorFn(` ${ui.categories[cat]} `)}  ${chalk.dim(`${diags.length} ${label}`)}`)
     console.log()
     diags.forEach(d => process.stdout.write(formatDiagnostic(d)))
     console.log()
   }
 
   if (diagnostics.length === 0) {
-    console.log(`  ${chalk.green('✓')} No issues found.`)
+    console.log(`  ${chalk.green('✓')} ${ui.noIssues}`)
     console.log()
   }
 
-  renderScoreBlock(score, files, duration, errors, warnings, infos)
+  renderScoreBlock(lang, score, files, duration, errors, warnings, infos)
 }
 
 const SEVERITY_RANK: Record<string, number> = { error: 0, warning: 1, info: 2 }

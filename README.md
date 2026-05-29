@@ -22,6 +22,14 @@ $ npx vue-radar@latest
 # scan entire project
 npx vue-radar@latest
 
+# scan a single component
+npx vue-radar@latest src/components/LoginForm.vue
+
+# scan specific files, a folder, or a glob (any mix)
+npx vue-radar@latest src/components/LoginForm.vue src/App.vue
+npx vue-radar@latest src/components
+npx vue-radar@latest 'src/**/*.vue'
+
 # scan only changed files (git diff vs main)
 npx vue-radar@latest --diff
 
@@ -40,9 +48,39 @@ npx vue-radar@latest --fail-on warning
 # use an explicit config file
 npx vue-radar@latest --config vue-radar.config.json
 
+# report language (en | fr) — defaults to config, then system locale
+npx vue-radar@latest --lang fr
+
 # list all rules
 npx vue-radar@latest rules
 ```
+
+## Commands
+
+| Command | Argument | Description |
+|---|---|---|
+| `scan` *(default)* | `[targets...]` | Scan the given files, directories or globs (default: current directory). Runs when no command is named. |
+| `install` | `[dir]` | Install vue-radar as an agent skill (Claude Code, Cursor, Codex/OpenCode). |
+| `init-action` | `[dir]` | Generate a GitHub Actions workflow (`.github/workflows/vue-radar.yml`). |
+| `rules` | — | List every available rule with its category and severity. |
+
+### `scan` options
+
+| Option | Description |
+|---|---|
+| `--json` | Output results as JSON (includes a pre-computed `summary`). |
+| `--diff` | Scan only files changed vs the `main`/`master` branch. |
+| `--rule <ids>` | Run only these rule IDs (comma-separated). |
+| `--skip <ids>` | Skip these rule IDs (comma-separated). |
+| `--config <path>` | Path to a config file (default: auto-detect at project root). |
+| `--lang <code>` | Report language: `en` or `fr` (default: config → system locale → `en`). |
+| `--fail-on <level>` | Exit `1` if issues at this severity exist: `error` (default) \| `warning` \| `info`. |
+
+### `install` options
+
+| Option | Description |
+|---|---|
+| `--agent <name>` | Target agent: `claude-code` \| `cursor` \| `codex` \| `opencode` (default: auto-detect). |
 
 ## Configuration
 
@@ -57,7 +95,8 @@ It is auto-detected; override with `--config <path>`.
     "missing-key-in-v-for": "off"
   },
   "ignore": ["**/legacy/**", "**/*.spec.vue"],
-  "failOn": "error"
+  "failOn": "error",
+  "lang": "fr"
 }
 ```
 
@@ -66,6 +105,8 @@ It is auto-detected; override with `--config <path>`.
 - **`ignore`** — extra glob patterns excluded from scanning (on top of
   `node_modules`, `dist`, `.nuxt`, `.output`).
 - **`failOn`** — severity threshold that makes the CLI exit `1`.
+- **`lang`** — report language, `"en"` or `"fr"`. Resolution order:
+  `--lang` flag → config `lang` → system locale (`LANG`/`LC_ALL`) → `en`.
 
 CLI flags win over the config file: `--skip` adds to disabled rules, `--rule`
 narrows to the listed rules, and `--fail-on` overrides `failOn`.

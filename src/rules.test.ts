@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseVueFile } from './parser'
+import { t } from './i18n'
 import type { Diagnostic, Rule } from './types'
 import { vHtmlUnsafe, dynamicHrefBinding } from './rules/security'
 import { vIfVForSameElement, missingKeyInVFor, missingDotValue, directReactiveMutation } from './rules/correctness'
@@ -24,7 +25,11 @@ function runRule(rule: Rule, source: string, filename = 'Comp.vue'): Diagnostic[
     sfc: parsed.sfc,
     scriptAst: parsed.scriptAst,
     templateAst: parsed.templateAst,
-    report: d => out.push({ ...d, file: filename }),
+    // Resolve message keys through the EN catalog — also catches missing keys.
+    report: d => {
+      const { message, fix } = t('en', d.msgId, d.params)
+      out.push({ ruleId: d.ruleId, category: d.category, severity: d.severity, line: d.line, message, fix, file: filename })
+    },
   })
   return out
 }
@@ -260,4 +265,43 @@ test('nuxt-server-import-in-client', () => {
     setup(`import fs from 'fs'`),
     setup(`import { ref } from 'vue'`),
   )
+})
+
+// --- i18n -------------------------------------------------------------------
+
+test('every emitted message key resolves in both EN and FR', () => {
+  // Collect every msgId actually emitted across all rules on a broad fixture set.
+  const samples = [
+    `<template><p v-html="raw"></p><a :href="u">x</a><li v-for="(i, idx) in xs" :key="idx" v-if="i"></li></template>` +
+      `<script setup lang="ts">import fs from 'fs'\nimport { ref, reactive, computed, watch } from 'vue'\n` +
+      `const c = ref(0); const big = ref({}); const st = reactive({})\n` +
+      `function f(){ c = 1; st = {} }\nwatch(c, async()=>{ await fetch('/x') })\n` +
+      `const cp = computed(()=>{ console.log(1); return 1 })\nconst d: any = 1\nemit('x')\nconst t = props.a\n` +
+      `window.addEventListener('r', f)\nconst { data } = useFetch('/a')</script>`,
+    setup(`import { onMounted } from 'vue'`).replace('script setup', 'script') // options-ish
+      ,
+  ]
+  const keys = new Set<string>()
+  for (const src of samples) {
+    const parsed = parseVueFile(src)
+    for (const rule of [
+      vHtmlUnsafe, dynamicHrefBinding, vIfVForSameElement, missingKeyInVFor, missingDotValue,
+      directReactiveMutation, noAsyncComponent, inlineComplexHandler, missingShallowRef, vForWithIndex,
+      missingDefineEmits, missingDefineProps, componentTooLarge, noExplicitAny, missingExpose,
+      watchMissingCleanup, sideEffectInComputed, lifecycleInSetup, missingOnUnmounted,
+      nuxtUseFetchOutsideSetup, nuxtMissingPageMeta, nuxtUseRouteOutsideSetup, nuxtFetchWithoutErrorHandling,
+      nuxtServerOnlyInClient,
+    ] as Rule[]) {
+      rule.check({
+        filename: 'pages/x.vue', source: src, sfc: parsed.sfc,
+        scriptAst: parsed.scriptAst, templateAst: parsed.templateAst,
+        report: d => keys.add(d.msgId),
+      })
+    }
+  }
+  assert.ok(keys.size > 0)
+  for (const k of keys) {
+    assert.doesNotThrow(() => t('en', k), `EN missing key ${k}`)
+    assert.doesNotThrow(() => t('fr', k), `FR missing key ${k}`)
+  }
 })
