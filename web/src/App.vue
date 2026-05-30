@@ -4,8 +4,13 @@
       <div class="container nav">
         <span class="logo">vue-radar</span>
         <nav>
-          <a href="https://github.com/your-org/vue-radar" target="_blank">github</a>
-          <a href="https://npmjs.com/package/vue-radar" target="_blank">npm</a>
+          <a href="https://github.com/your-org/vue-radar" target="_blank">{{ t('nav.github') }}</a>
+          <a href="https://npmjs.com/package/vue-radar" target="_blank">{{ t('nav.npm') }}</a>
+          <div class="lang">
+            <button :class="{ active: lang === 'en' }" @click="setLocale('en')">EN</button>
+            <span class="sep">/</span>
+            <button :class="{ active: lang === 'fr' }" @click="setLocale('fr')">FR</button>
+          </div>
         </nav>
       </div>
     </header>
@@ -17,7 +22,7 @@
 
     <footer>
       <div class="container foot">
-        <span class="muted">MIT · Vue 3 · Nuxt 3</span>
+        <span class="muted">{{ t('footer.meta') }}</span>
       </div>
     </footer>
   </div>
@@ -26,6 +31,9 @@
 <script setup lang="ts">
 import Hero from './components/Hero.vue'
 import RulesList from './components/RulesList.vue'
+import { useI18n } from './i18n'
+
+const { t, lang, setLocale } = useI18n()
 </script>
 
 <style scoped>
@@ -48,9 +56,24 @@ header {
   font-weight: 700;
 }
 
-nav { display: flex; gap: 20px; }
+nav { display: flex; gap: 20px; align-items: center; }
 nav a { font-size: 0.75rem; color: var(--muted); }
 nav a:hover { color: var(--text); }
+
+.lang { display: flex; align-items: center; gap: 6px; }
+.lang button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+.lang button:hover { color: var(--text); }
+.lang button.active { color: var(--green); }
+.lang .sep { color: var(--border); font-size: 0.72rem; }
 
 main { flex: 1; }
 

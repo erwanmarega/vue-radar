@@ -2,13 +2,13 @@
   <section class="hero">
     <div class="container">
 
-      <p class="tagline">Catch bad Vue before it ships.</p>
+      <p class="tagline">{{ t('hero.tagline') }}</p>
 
-      <h1>Static analysis<br />for Vue.js codebases.</h1>
+      <h1>{{ t('hero.title.l1') }}<br />{{ t('hero.title.l2') }}</h1>
 
       <p class="desc">
-        24 rules across security, correctness, performance,<br />
-        architecture, and composition. Zero config.
+        {{ t('hero.desc.l1') }}<br />
+        {{ t('hero.desc.l2') }}
       </p>
 
       <!-- mini terminal -->
@@ -27,9 +27,9 @@
       <!-- install cta -->
       <div class="cta">
         <code>npx vue-radar@latest</code>
-        <span class="muted">or</span>
+        <span class="muted">{{ t('hero.cta.or') }}</span>
         <code>npx vue-radar@latest install</code>
-        <span class="muted">for agent skill</span>
+        <span class="muted">{{ t('hero.cta.skill') }}</span>
       </div>
 
       <!-- integrations row -->
@@ -48,6 +48,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from '../i18n'
+
+const { t } = useI18n()
 
 type Part = { t: string; c?: string }
 
@@ -79,9 +82,54 @@ onMounted(() => {
 
 <style scoped>
 .hero {
+  position: relative;
+  overflow: hidden;
   padding: 96px 0 80px;
   border-bottom: 1px solid var(--border);
 }
+
+/* soft pulsing glow behind the headline */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -160px;
+  left: 50%;
+  width: 620px;
+  height: 420px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle at center, rgba(61, 220, 132, 0.12), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: glow-pulse 6s ease-in-out infinite;
+}
+
+.hero .container {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+/* staggered entrance on load */
+.tagline,
+h1,
+.desc,
+.term,
+.cta,
+.badges {
+  opacity: 0;
+  animation: fade-up 0.6s ease forwards;
+}
+
+.tagline { animation-delay: 0.05s; }
+h1       { animation-delay: 0.15s; }
+.desc    { animation-delay: 0.28s; }
+.term    { animation-delay: 0.40s; }
+.cta     { animation-delay: 0.52s; }
+.badges  { animation-delay: 0.62s; }
 
 .tagline {
   font-size: 0.75rem;
@@ -114,6 +162,17 @@ h1 {
   background: #090909;
   margin-bottom: 32px;
   min-height: 60px;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.term:hover {
+  border-color: #2c2c2c;
+  box-shadow: 0 0 0 1px rgba(61, 220, 132, 0.12);
+}
+
+/* each result line eases in as it's appended */
+.term-line.output {
+  animation: fade-up 0.3s ease backwards;
 }
 
 .term-line {
@@ -180,5 +239,16 @@ code {
   padding: 2px 8px;
   border-radius: 3px;
   letter-spacing: 0.03em;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.badges span:hover {
+  color: var(--text);
+  border-color: #383838;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tagline, h1, .desc, .term, .cta, .badges,
+  .term-line.output { opacity: 1; }
 }
 </style>

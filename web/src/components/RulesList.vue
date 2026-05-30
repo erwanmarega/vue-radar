@@ -2,8 +2,8 @@
   <section class="rules">
     <div class="container">
 
-      <div class="rules-header">
-        <span class="label">rules</span>
+      <div class="rules-header" v-reveal>
+        <span class="label">{{ t('rules.label') }}</span>
         <span class="count muted">{{ total }}</span>
         <div class="filters">
           <button
@@ -11,11 +11,11 @@
             :key="cat"
             :class="['f', { active: active === cat }]"
             @click="active = active === cat ? null : cat"
-          >{{ cat }}</button>
+          >{{ t('rules.cat.' + cat) }}</button>
         </div>
       </div>
 
-      <div class="list">
+      <div class="list" v-reveal>
         <div
           v-for="r in visible"
           :key="r.id"
@@ -23,7 +23,7 @@
         >
           <span :class="['sev', r.sev]">{{ r.sev[0] }}</span>
           <span class="id">{{ r.id }}</span>
-          <span class="msg">{{ r.msg }}</span>
+          <span class="msg">{{ t('rule.' + r.id) }}</span>
         </div>
       </div>
 
@@ -33,24 +33,27 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from '../i18n'
+
+const { t } = useI18n()
 
 const active = ref<string | null>(null)
 
 const ALL = [
   { id: 'v-html-unsafe',               msg: 'v-html without sanitization — XSS',               cat: 'security',     sev: 'error' },
-  { id: 'nuxt-server-import-in-client', msg: 'Node.js built-in imported in component',          cat: 'security',     sev: 'error' },
+  { id: 'nuxt-server-import-in-client', msg: 'Node.js built-in imported in component',          cat: 'nuxt',         sev: 'error' },
   { id: 'dynamic-href-unsafe',          msg: 'Dynamic :href may allow javascript: URLs',         cat: 'security',     sev: 'warning' },
   { id: 'v-if-v-for-same-element',      msg: 'v-if + v-for on same element',                    cat: 'correctness',  sev: 'error' },
   { id: 'direct-reactive-mutation',     msg: 'reactive() object directly replaced',             cat: 'correctness',  sev: 'error' },
-  { id: 'side-effect-in-computed',      msg: 'Side effect inside computed()',                   cat: 'correctness',  sev: 'error' },
-  { id: 'lifecycle-outside-setup',      msg: 'Lifecycle hook outside setup()',                  cat: 'correctness',  sev: 'error' },
-  { id: 'nuxt-usefetch-outside-setup',  msg: 'useFetch outside Nuxt setup context',             cat: 'correctness',  sev: 'error' },
-  { id: 'nuxt-use-route-outside-setup', msg: 'useRoute/useRouter outside setup',                cat: 'correctness',  sev: 'error' },
+  { id: 'side-effect-in-computed',      msg: 'Side effect inside computed()',                   cat: 'composition',  sev: 'error' },
+  { id: 'lifecycle-outside-setup',      msg: 'Lifecycle hook outside setup()',                  cat: 'composition',  sev: 'error' },
+  { id: 'nuxt-usefetch-outside-setup',  msg: 'useFetch outside Nuxt setup context',             cat: 'nuxt',         sev: 'error' },
+  { id: 'nuxt-use-route-outside-setup', msg: 'useRoute/useRouter outside setup',                cat: 'nuxt',         sev: 'error' },
   { id: 'missing-key-in-v-for',         msg: 'v-for without :key',                             cat: 'correctness',  sev: 'warning' },
   { id: 'missing-dot-value',            msg: 'ref used without .value',                         cat: 'correctness',  sev: 'warning' },
-  { id: 'nuxt-fetch-no-error-handling', msg: 'useFetch without error destructuring',            cat: 'correctness',  sev: 'warning' },
-  { id: 'watch-missing-cleanup',        msg: 'Async fetch in watch() without cleanup',          cat: 'correctness',  sev: 'warning' },
-  { id: 'missing-on-unmounted-cleanup', msg: 'addEventListener/setInterval without cleanup',    cat: 'correctness',  sev: 'warning' },
+  { id: 'nuxt-fetch-no-error-handling', msg: 'useFetch without error destructuring',            cat: 'nuxt',         sev: 'warning' },
+  { id: 'watch-missing-cleanup',        msg: 'Async fetch in watch() without cleanup',          cat: 'composition',  sev: 'warning' },
+  { id: 'missing-on-unmounted-cleanup', msg: 'addEventListener/setInterval without cleanup',    cat: 'composition',  sev: 'warning' },
   { id: 'v-for-index-as-key',           msg: 'Array index used as :key',                       cat: 'performance',  sev: 'warning' },
   { id: 'no-async-component',           msg: 'Component statically imported (not lazy)',        cat: 'performance',  sev: 'info' },
   { id: 'missing-shallow-ref',          msg: 'ref() on large object — use shallowRef()',        cat: 'performance',  sev: 'info' },
@@ -60,10 +63,10 @@ const ALL = [
   { id: 'component-too-large',          msg: 'Component over 400 lines',                       cat: 'architecture', sev: 'error' },
   { id: 'no-explicit-any',             msg: 'Explicit any type in script',                     cat: 'architecture', sev: 'info' },
   { id: 'missing-expose',              msg: 'Template refs without defineExpose()',             cat: 'architecture', sev: 'info' },
-  { id: 'nuxt-missing-page-meta',      msg: 'Nuxt page without definePageMeta()',              cat: 'architecture', sev: 'info' },
+  { id: 'nuxt-missing-page-meta',      msg: 'Nuxt page without definePageMeta()',              cat: 'nuxt',         sev: 'info' },
 ]
 
-const cats = ['security', 'correctness', 'performance', 'architecture']
+const cats = ['security', 'correctness', 'performance', 'architecture', 'composition', 'nuxt']
 const total = ALL.length
 
 const visible = computed(() =>
@@ -132,8 +135,13 @@ const visible = computed(() =>
   padding: 6px 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.75rem;
+  transition: transform 0.15s ease, background 0.15s ease;
 }
 .row:last-child { border-bottom: none; }
+.row:hover {
+  transform: translateX(4px);
+  background: rgba(61, 220, 132, 0.03);
+}
 .row:hover .id { color: var(--text); }
 
 .sev {
