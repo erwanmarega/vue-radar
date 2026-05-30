@@ -21,6 +21,14 @@
         <div v-for="(line, i) in visible" :key="i" class="term-line output">
           <span v-for="(p, j) in line" :key="j" :class="p.c">{{ p.t }}</span>
         </div>
+        <div v-if="scoreVisible" class="term-line output score-line">
+          <span class="dim">  score  </span>
+          <span class="bar-wrap">
+            <span class="bar-track">████████████████</span>
+            <span class="bar-fill" :style="{ width: scoreFill + '%' }">████████████████</span>
+          </span>
+          <span class="score-val">  {{ scoreNum }}/100</span>
+        </div>
         <div v-if="showCursor" class="term-line"><span class="cursor">█</span></div>
       </div>
 
@@ -60,11 +68,41 @@ const LINES: Part[][] = [
   [{ t: '' }],
   [{ t: '  ⚠ ', c: 'warn' }, { t: 'UserList.vue:17   ', c: 'dim' }, { t: '[missing-key-in-v-for]', c: 'rule' }],
   [{ t: '' }],
-  [{ t: '  score  ' , c: 'dim' }, { t: '████████████░░░░', c: 'bar' }, { t: '  74/100', c: 'score' }],
 ]
+
+const SCORE = 74
 
 const visible = ref<Part[][]>([])
 const showCursor = ref(true)
+const scoreVisible = ref(false)
+const scoreFill = ref(0)
+const scoreNum = ref(0)
+
+function animateScore() {
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduceMotion) {
+    scoreFill.value = SCORE
+    scoreNum.value = SCORE
+    showCursor.value = false
+    return
+  }
+  // bar width is CSS-transitioned; flip it on next frame so the transition runs
+  requestAnimationFrame(() => { scoreFill.value = SCORE })
+  // count the number up in step with the bar (~1s)
+  const duration = 1000
+  const start = performance.now()
+  const tickNum = (now: number) => {
+    const p = Math.min((now - start) / duration, 1)
+    const eased = 1 - Math.pow(1 - p, 3) // easeOutCubic
+    scoreNum.value = Math.round(eased * SCORE)
+    if (p < 1) {
+      requestAnimationFrame(tickNum)
+    } else {
+      showCursor.value = false
+    }
+  }
+  requestAnimationFrame(tickNum)
+}
 
 onMounted(() => {
   let i = 0
@@ -73,7 +111,8 @@ onMounted(() => {
       visible.value.push(LINES[i++])
       setTimeout(tick, i < 3 ? 220 : 100)
     } else {
-      showCursor.value = false
+      scoreVisible.value = true
+      setTimeout(animateScore, 120)
     }
   }
   setTimeout(tick, 700)
@@ -190,13 +229,29 @@ h1 {
 .warn { color: var(--yellow); }
 .rule { color: var(--purple); }
 .fix  { color: var(--green); }
-.score { color: var(--green); font-weight: 700; }
-.bar {
-  background: linear-gradient(90deg, var(--green) 75%, #2a2a2a 75%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.score-val { color: var(--green); font-weight: 700; }
+
+/* animated score bar — green fill grows over a grey track */
+.score-line { white-space: nowrap; }
+
+.bar-wrap {
+  position: relative;
+  display: inline-block;
   letter-spacing: -0.01em;
+  vertical-align: bottom;
+}
+
+.bar-track { color: #2a2a2a; }
+
+.bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--green);
+  transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .cursor {

@@ -45,22 +45,44 @@ function scoreGrade(score: number): string {
   return 'F'
 }
 
-function renderScoreBlock(lang: Lang, score: number, files: number, duration: number, errors: number, warnings: number, infos: number): void {
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
+
+/**
+ * Animate the score bar filling up, one cell at a time, by rewriting the line
+ * with a carriage return. Only runs on an interactive TTY — under CI, pipes or
+ * NO_COLOR it falls back to printing the final bar in one shot so logs stay clean.
+ */
+async function renderBar(sc: (s: string) => string, width: number, filled: number): Promise<void> {
+  const finalBar = sc('█'.repeat(filled)) + chalk.dim('░'.repeat(width - filled))
+
+  if (!process.stdout.isTTY || process.env.NO_COLOR) {
+    console.log(`  ${finalBar}`)
+    return
+  }
+
+  // ~600ms total regardless of bar length, capped so it never drags.
+  const step = Math.max(12, Math.min(40, Math.round(600 / Math.max(filled, 1))))
+  for (let i = 0; i <= filled; i++) {
+    const bar = sc('█'.repeat(i)) + chalk.dim('░'.repeat(width - i))
+    process.stdout.write(`\r  ${bar}`)
+    if (i < filled) await sleep(step)
+  }
+  process.stdout.write('\n')
+}
+
+async function renderScoreBlock(lang: Lang, score: number, files: number, duration: number, errors: number, warnings: number, infos: number): Promise<void> {
   const ui = uiStrings(lang)
   const sc = scoreColor(score)
   const grade = scoreGrade(score)
   const BAR_WIDTH = 30
   const filled = Math.round((score / 100) * BAR_WIDTH)
-  const empty = BAR_WIDTH - filled
-
-  const bar = sc('█'.repeat(filled)) + chalk.dim('░'.repeat(empty))
 
   console.log(chalk.dim('  ' + '─'.repeat(54)))
   console.log()
 
   console.log(`  ${chalk.dim(ui.score)}  ${sc(chalk.bold(String(score).padStart(3)))}${chalk.dim('/100')}  ${sc(chalk.bold(grade))}`)
   console.log()
-  console.log(`  ${bar}`)
+  await renderBar(sc, BAR_WIDTH, filled)
   console.log()
 
   console.log(
@@ -88,7 +110,7 @@ function formatDiagnostic(d: Diagnostic): string {
   return out
 }
 
-export function printReport(result: ScanResult, lang: Lang = 'en'): void {
+export async function printReport(result: ScanResult, lang: Lang = 'en'): Promise<void> {
   const { score, files, diagnostics, duration, byCategory } = result
   const ui = uiStrings(lang)
 
@@ -120,7 +142,7 @@ export function printReport(result: ScanResult, lang: Lang = 'en'): void {
     console.log()
   }
 
-  renderScoreBlock(lang, score, files, duration, errors, warnings, infos)
+  await renderScoreBlock(lang, score, files, duration, errors, warnings, infos)
 }
 
 const SEVERITY_RANK: Record<string, number> = { error: 0, warning: 1, info: 2 }

@@ -71,7 +71,7 @@ program
     if (opts.json) {
       printJson(result)
     } else {
-      printReport(result, lang)
+      await printReport(result, lang)
     }
 
     // Precedence: --fail-on flag > config.failOn > 'error'.
